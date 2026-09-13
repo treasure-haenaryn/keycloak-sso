@@ -1,0 +1,181 @@
+{
+  "realm": "sso-poc",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 32400,
+
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+
+  "roles": {
+    "realm": [
+      { "name": "cms-user", "description": "Can access CMS tools" }
+    ]
+  },
+
+  "groups": [
+    { "name": "member-cms-users", "path": "/member-cms-users" },
+    { "name": "payment-cms-users", "path": "/payment-cms-users" }
+  ],
+
+  "users": [
+    {
+      "username": "lee",
+      "enabled": true,
+      "email": "lee@example.com",
+      "emailVerified": true,
+      "firstName": "Lee",
+      "lastName": "Admin",
+      "credentials": [
+        { "type": "password", "value": "lee1227", "temporary": false }
+      ],
+      "realmRoles": ["cms-user"],
+      "groups": ["/member-cms-users", "/payment-cms-users"],
+      "attributes": {
+        "member_cms_username": ["lee.dev"],
+        "payment_cms_username": ["leedev"]
+      }
+    },
+    {
+      "username": "seo",
+      "enabled": true,
+      "email": "seo@example.com",
+      "emailVerified": true,
+      "firstName": "Seo",
+      "lastName": "Operator",
+      "credentials": [
+        { "type": "password", "value": "seo1127", "temporary": false }
+      ],
+      "realmRoles": ["cms-user"],
+      "groups": ["/member-cms-users"],
+      "attributes": {
+        "member_cms_username": ["seo.dev"],
+        "payment_cms_username": ["__no_access__"]
+      }
+    }
+  ],
+
+  "clients": [
+    {
+      "clientId": "member-cms-proxy",
+      "name": "Member CMS (IDC, via oauth2-proxy)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "member-cms-secret",
+      "redirectUris": ["http://localhost:4181/oauth2/callback"],
+      "webOrigins": ["+"],
+      "fullScopeAllowed": true,
+      "attributes": {
+        "access.token.lifespan": "90"
+      },
+      "protocolMappers": [
+        {
+          "name": "member-cms-username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "member_cms_username",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "member_cms_username",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "groups"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "payment-cms-proxy",
+      "name": "Payment CMS (IDC, via oauth2-proxy)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "payment-cms-secret",
+      "redirectUris": ["http://localhost:4182/oauth2/callback"],
+      "webOrigins": ["+"],
+      "fullScopeAllowed": true,
+      "attributes": {
+        "access.token.lifespan": "90",
+        "client.session.idle.timeout": "900"
+      },
+      "protocolMappers": [
+        {
+          "name": "payment-cms-username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "payment_cms_username",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "payment_cms_username",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "groups"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "modern-cms",
+      "name": "Modern CMS (GCP Cloud Run, direct OIDC)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "modern-cms-secret",
+      "redirectUris": ["http://localhost:8083/login/oauth2/code/keycloak"],
+      "webOrigins": ["+"],
+      "fullScopeAllowed": true,
+      "attributes": {
+        "backchannel.logout.url": "http://modern-cms:8083/logout/connect/back-channel/keycloak",
+        "backchannel.logout.session.required": "true",
+        "backchannel.logout.revoke.offline.tokens": "false"
+      }
+    }
+  ]
+}
