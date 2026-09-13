@@ -1,0 +1,12 @@
+# Local design notes, not published
+PLAN.md
+
+# Build artifacts
+target/
+*.class
+
+# OS / editor
+.DS_Store
+.idea/
+*.iml
+.vscode/
