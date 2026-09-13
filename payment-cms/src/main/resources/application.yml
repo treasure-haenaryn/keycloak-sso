@@ -1,0 +1,13 @@
+server:
+  port: 8080
+  servlet:
+    session:
+      timeout: 20m
+
+spring:
+  application:
+    name: payment-cms
+
+logging:
+  level:
+    org.springframework.security: INFO
