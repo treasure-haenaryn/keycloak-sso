@@ -1,0 +1,26 @@
+server:
+  port: 8083
+  servlet:
+    session:
+      timeout: 20m
+
+spring:
+  application:
+    name: modern-cms
+  security:
+    oauth2:
+      client:
+        registration:
+          keycloak:
+            client-id: modern-cms
+            client-secret: modern-cms-secret
+            authorization-grant-type: authorization_code
+            scope: openid, profile, email
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+        provider:
+          keycloak:
+            issuer-uri: http://idp.local:8080/realms/sso-poc
+
+logging:
+  level:
+    org.springframework.security: INFO
