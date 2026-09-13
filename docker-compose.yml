@@ -1,0 +1,83 @@
+networks:
+  sso-net:
+    driver: bridge
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      # Hedging both old and new admin-bootstrap env var names since the exact
+      # ones depend on the Keycloak version actually pulled - harmless either way.
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: idp.local
+      KC_HOSTNAME_PORT: "8080"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HTTP_ENABLED: "true"
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports:
+      - "8080:8080"
+    networks:
+      sso-net:
+        aliases:
+          - idp.local
+
+  member-cms:
+    build: ./member-cms
+    networks:
+      - sso-net
+    # No "ports:" on purpose - only oauth2-proxy-member can reach this,
+    # simulating the network isolation that's load-bearing for this whole design.
+
+  payment-cms:
+    build: ./payment-cms
+    networks:
+      - sso-net
+    # Same as above.
+
+  oauth2-proxy-member:
+    image: quay.io/oauth2-proxy/oauth2-proxy:latest
+    command: ["--config=/etc/oauth2-proxy.cfg"]
+    volumes:
+      - ./oauth2-proxy/member.cfg:/etc/oauth2-proxy.cfg:ro
+    ports:
+      - "4181:4180"
+    depends_on:
+      - keycloak
+      - member-cms
+    # keycloak's HTTP endpoint isn't up the instant its container starts (start-dev takes
+    # a while to boot + import the realm) - depends_on only waits for the container to
+    # start, not for Keycloak itself to be ready, so this retries OIDC discovery until it is.
+    restart: on-failure:10
+    networks:
+      - sso-net
+
+  oauth2-proxy-payment:
+    image: quay.io/oauth2-proxy/oauth2-proxy:latest
+    command: ["--config=/etc/oauth2-proxy.cfg"]
+    volumes:
+      - ./oauth2-proxy/payment.cfg:/etc/oauth2-proxy.cfg:ro
+    ports:
+      - "4182:4180"
+    depends_on:
+      - keycloak
+      - payment-cms
+    restart: on-failure:10
+    networks:
+      - sso-net
+
+  modern-cms:
+    build: ./modern-cms
+    ports:
+      - "8083:8083"
+    depends_on:
+      - keycloak
+    # Same reason as the oauth2-proxy services above - Spring's OIDC client fetches
+    # issuer metadata from Keycloak at startup and fails fast if it's not ready yet.
+    restart: on-failure:10
+    networks:
+      - sso-net
