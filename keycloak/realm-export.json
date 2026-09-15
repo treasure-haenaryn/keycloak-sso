@@ -16,6 +16,20 @@
   "quickLoginCheckMilliSeconds": 1000,
   "maxDeltaTimeSeconds": 43200,
 
+  "eventsEnabled": true,
+  "eventsListeners": ["jboss-logging"],
+  "eventsExpiration": 7776000,
+  "enabledEventTypes": [
+    "LOGIN", "LOGIN_ERROR",
+    "LOGOUT", "LOGOUT_ERROR",
+    "UPDATE_PASSWORD", "UPDATE_PASSWORD_ERROR",
+    "UPDATE_TOTP", "REMOVE_TOTP",
+    "CODE_TO_TOKEN_ERROR", "CLIENT_LOGIN_ERROR",
+    "USER_DISABLED_BY_PERMANENT_LOCKOUT", "USER_DISABLED_BY_TEMPORARY_LOCKOUT"
+  ],
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": true,
+
   "roles": {
     "realm": [
       { "name": "cms-user", "description": "Can access CMS tools" }
