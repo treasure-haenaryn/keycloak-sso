@@ -174,7 +174,8 @@
       "attributes": {
         "backchannel.logout.url": "http://modern-cms:8083/logout/connect/back-channel/keycloak",
         "backchannel.logout.session.required": "true",
-        "backchannel.logout.revoke.offline.tokens": "false"
+        "backchannel.logout.revoke.offline.tokens": "false",
+        "post.logout.redirect.uris": "http://localhost:8083"
       },
       "authenticationFlowBindingOverrides": {
         "browser": "5a98d883-3357-4b87-80d2-000b68c08d3c"
