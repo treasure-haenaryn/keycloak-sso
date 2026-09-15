@@ -56,7 +56,8 @@
       "groups": ["/member-cms-users", "/payment-cms-users"],
       "attributes": {
         "member_cms_username": ["lee.dev"],
-        "payment_cms_username": ["leedev"]
+        "payment_cms_username": ["leedev"],
+        "phone_number": ["+821000000000"]
       }
     },
     {
@@ -73,7 +74,8 @@
       "groups": ["/member-cms-users"],
       "attributes": {
         "member_cms_username": ["seo.dev"],
-        "payment_cms_username": ["__no_access__"]
+        "payment_cms_username": ["__no_access__"],
+        "phone_number": ["+821099999999"]
       }
     }
   ],
@@ -192,7 +194,7 @@
         "post.logout.redirect.uris": "http://localhost:8083"
       },
       "authenticationFlowBindingOverrides": {
-        "browser": "5a98d883-3357-4b87-80d2-000b68c08d3c"
+        "browser": "c47a1e2f-9b3d-4a6e-8f21-5d7c9e1b3a44"
       }
     }
   ],
@@ -257,6 +259,73 @@
         },
         {
           "authenticator": "auth-otp-form",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        }
+      ]
+    },
+    {
+      "id": "c47a1e2f-9b3d-4a6e-8f21-5d7c9e1b3a44",
+      "alias": "browser-phone-mfa-required",
+      "description": "browser based authentication with phone/Kakao MFA",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-cookie",
+          "authenticatorFlow": false,
+          "requirement": "ALTERNATIVE",
+          "priority": 10,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "auth-spnego",
+          "authenticatorFlow": false,
+          "requirement": "DISABLED",
+          "priority": 20,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "identity-provider-redirector",
+          "authenticatorFlow": false,
+          "requirement": "ALTERNATIVE",
+          "priority": 25,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticatorFlow": true,
+          "requirement": "ALTERNATIVE",
+          "priority": 30,
+          "autheticatorFlow": true,
+          "flowAlias": "browser-phone-mfa-required forms",
+          "userSetupAllowed": false
+        }
+      ]
+    },
+    {
+      "alias": "browser-phone-mfa-required forms",
+      "description": "Username, password and phone MFA.",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-username-password-form",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 0,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        },
+        {
+          "authenticator": "phone-mfa-authenticator",
           "authenticatorFlow": false,
           "requirement": "REQUIRED",
           "priority": 10,

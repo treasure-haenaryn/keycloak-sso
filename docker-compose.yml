@@ -27,7 +27,7 @@ services:
       - sso-net
 
   keycloak:
-    image: quay.io/keycloak/keycloak:25.0
+    build: ./keycloak
     # Still start-dev (not the production "start" command) so HTTP/hostname config stays
     # as-is - only the storage backend changes here, from the embedded dev H2 to a real
     # external Postgres, which is what production actually requires.

@@ -125,5 +125,15 @@ SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..." bash keycloak/slack-ale
 1. seo 계정으로 틀린 비밀번호 5회 입력 (LOGIN_ERROR + 잠금 이벤트 발생) → 스크립트 실행 → Slack 채널에 도착 확인
 2. 일부러 잘못된 `SLACK_WEBHOOK_URL`로 실행 → 실패 로그 출력, `.slack-alert-state.json`의 워터마크가 전진 안 하는지 확인
 3. 정상 URL로 재실행 → 2번에서 놓쳤던 이벤트가 이번엔 도착하는지 확인 (유실 없이 재시도됨)
-7. 그 사이 새로 로그인한 세션들(member-cms, payment-cms SSO 포함)은 계속 정상 동작하는지 확인
+4. 그 사이 새로 로그인한 세션들(member-cms, payment-cms SSO 포함)은 계속 정상 동작하는지 확인
+
+### 11. 전화/카카오 MFA (커스텀 Authenticator SPI) 확인
+
+`modern-cms`(8083)만 `keycloak/extensions/phone-mfa-authenticator/`의 커스텀 MFA를 거치도록 바인딩되어 있음. member-cms/payment-cms는 영향 없음.
+
+1. lee로 modern-cms(8083) 로그인 → 비밀번호 다음 "문자로 받은 인증 코드를 입력하세요" 화면이 뜨는지 확인
+2. `docker compose logs keycloak | grep PHONE-MFA`로 발송된 코드를 확인 → 그 코드를 입력하면 로그인 성공
+3. 틀린 코드를 5회 연속 입력 → "시도 횟수를 초과했습니다" 에러로 막히는지 확인
+4. 코드 유효시간(기본 180초)이 지난 뒤 입력 → "코드가 만료되었습니다" 에러 확인 → 재발송 버튼으로 새 코드 받아 정상 로그인되는지 확인
+5. member-cms(4181), payment-cms(4182)는 여전히 코드 입력 없이 그대로 로그인되는지 확인 (영향 없음)
 

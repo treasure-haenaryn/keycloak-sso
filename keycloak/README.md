@@ -122,3 +122,18 @@ secret_data: {"value":"<해시값>", "salt":"<랜덤값>"}
 ### username과 email은 별개 컬럼
 
 `user_entity.username`과 `user_entity.email`은 서로 다른 필드 (예: `username="lee"`, `email="lee@example.com"`). realm 설정에 따라 로그인 시 둘 중 하나로도 로그인 가능하게 할 수 있지만, 저장되는 `username` 값 자체가 바뀌는 건 아님.
+
+## 8. Custom Authenticator SPI — 전화/카카오 MFA
+
+키클록 기본 MFA는 TOTP(구글 OTP류)뿐이라, 실제 전화/카카오톡 인증을 붙이려면 직접 자바 플러그인(Authenticator SPI)을 만들어야 함. `keycloak/extensions/phone-mfa-authenticator/`가 그 구현체 — 실제 SMS/카카오 게이트웨이 계정이 없어서 발송 부분만 로그 출력(stub)으로 대체했고, 나머지 생명주기(코드 생성 → 도전 폼 → 제출 검증 → 만료/재시도 제한)는 실제 프로덕션과 동일한 구조.
+
+**핵심 클래스**
+- `PhoneMfaAuthenticator`: `authenticate()`에서 유저의 `phone_number` 속성으로 6자리 코드를 만들어 `AuthenticationSession`의 authNote에 저장하고 `MessageSender`로 발송, `phone-otp-form.ftl` 챌린지 폼을 띄움. `action()`에서 제출된 코드를 검증 — 만료됐으면 에러, 틀리면 시도횟수 증가(기본 5회 초과 시 실패), 재발송 버튼을 누르면 새 코드로 교체.
+- `PhoneMfaAuthenticatorFactory`: SPI 등록점. `code.ttl.seconds`/`max.attempts`를 Admin Console에서 조정 가능한 설정으로 노출.
+- `MessageSender`: 실제 SMS/카카오 클라이언트로 교체할 단 하나의 지점. 현재는 `LoggingMessageSender`가 `docker compose logs keycloak`에 코드를 찍는 걸로 대체.
+
+**패키징**: `keycloak/Dockerfile`이 이 모듈을 Maven으로 빌드해서 나온 jar를 키클록 이미지의 `/opt/keycloak/providers/`에 넣음 (`docker-compose.yml`의 `keycloak` 서비스가 `image` 대신 `build: ./keycloak`을 쓰는 이유). `start-dev`는 `providers/`에 새 jar가 있으면 기동 시 자동으로 재증강(auto re-augmentation)하므로 별도 `kc.sh build` 실행은 불필요.
+
+**적용 대상**: `modern-cms`(GCP Cloud Run 대역)만 `browser-phone-mfa-required` flow로 바인딩 — 실제로 그 CMS가 전화/카카오 MFA로 전환됐다는 시나리오를 그대로 반영. member-cms/payment-cms(IDC, ID/PW만)는 기존 flow 그대로라 영향 없음. TOTP 기반 `browser-otp-required`(6번 섹션)는 JSON에는 남아있지만 현재 어떤 클라이언트에도 바인딩되어 있지 않음 — 비교용으로 남겨둠.
+
+**함정**: 이 flow를 Admin API로 조립할 때 `browser` flow를 복제(`/copy`)하면 내부에 "Browser - Conditional OTP"라는 CONDITIONAL 서브플로우가 함께 복제됨. 이걸 단순히 `DISABLED`로 바꾸기만 하면 `AuthenticationFlowException`이 나면서 로그인 자체가 깨짐 — DISABLED가 아니라 그 실행(execution) 자체를 **삭제**해야 함.
