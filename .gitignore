@@ -10,3 +10,6 @@ target/
 .idea/
 *.iml
 .vscode/
+
+# Runtime state, not published
+keycloak/.slack-alert-state.json

@@ -101,5 +101,29 @@ bash keycloak/rotate-keys.sh --remove ID  # 지정한 옛 Provider 제거
 4. 1번에서 받아둔 옛 토큰으로 다시 userinfo 호출 → 여전히 200 (옛 키가 아직 JWKS에 남아있어서 유효)
 5. `--remove`로 옛 Provider 제거
 6. 같은 옛 토큰으로 다시 userinfo 호출 → 이번엔 401 (옛 키가 사라져서 검증 불가)
+
+### 10. Slack 알림 확인
+
+`keycloak/slack-alerts.sh`가 키클록의 이벤트 로그(브루트포스, 계정 잠금, 관리자 작업)를 주기적으로 조회해서 Slack으로 보냄. Slack 전송이 실패해도 "마지막으로 확인한 시각"이 아니라 "마지막으로 성공적으로 보낸 지점"까지만 진행 상태를 저장해서, 실패한 이벤트는 다음 실행 때 다시 시도됨(유실 대신 지연).
+
+**사전 준비**: Slack App에서 Incoming Webhooks 활성화 → 채널에 연결 → Webhook URL 확보 ([api.slack.com/apps](https://api.slack.com/apps) → 앱 선택 → Incoming Webhooks → Activate → Add New Webhook to Workspace)
+
+```bash
+# 최초 실행: 워터마크만 초기화하고 아무것도 안 보냄 (기존에 쌓인 이벤트 재알림 방지)
+SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..." bash keycloak/slack-alerts.sh
+
+# 이후 실행: 그 시점 이후 발생한 이벤트만 전송
+SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..." bash keycloak/slack-alerts.sh
+```
+
+실제 운영 시에는 크론으로 주기 실행 (예: 1분마다):
+```
+* * * * * cd /path/to/keycloak-sso/keycloak && SLACK_WEBHOOK_URL="..." ./slack-alerts.sh >> /var/log/kc-slack-alerts.log 2>&1
+```
+
+**테스트 시나리오**:
+1. seo 계정으로 틀린 비밀번호 5회 입력 (LOGIN_ERROR + 잠금 이벤트 발생) → 스크립트 실행 → Slack 채널에 도착 확인
+2. 일부러 잘못된 `SLACK_WEBHOOK_URL`로 실행 → 실패 로그 출력, `.slack-alert-state.json`의 워터마크가 전진 안 하는지 확인
+3. 정상 URL로 재실행 → 2번에서 놓쳤던 이벤트가 이번엔 도착하는지 확인 (유실 없이 재시도됨)
 7. 그 사이 새로 로그인한 세션들(member-cms, payment-cms SSO 포함)은 계속 정상 동작하는지 확인
 
