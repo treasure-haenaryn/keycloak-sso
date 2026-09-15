@@ -86,3 +86,20 @@ oauth2-proxy가 이 값을 무시하고 미인증 상태로 키클록 로그인 
 ### 8. Brute-force 보호 확인
 lee 계정으로 틀린 비밀번호를 5회 연속 입력 → 그 다음부터 (정확한 비밀번호를 넣어도) 잠기는지, 시간이 지나면 자동으로 풀리는지 확인
 
+### 9. 서명키 로테이션 확인
+`keycloak/rotate-keys.sh`로 실제 키 로테이션 생명주기를 확인. Keycloak은 로테이션을 자동으로 하지 않고, 우선순위가 더 높은 새 키 Provider를 추가하는 관리자 액션으로 처리됨.
+
+```bash
+bash keycloak/rotate-keys.sh              # 현재 서명키 Provider 목록 확인
+bash keycloak/rotate-keys.sh --add        # 우선순위가 더 높은 새 키 추가 (이제부터 새 토큰은 이 키로 서명)
+bash keycloak/rotate-keys.sh --remove ID  # 지정한 옛 Provider 제거
+```
+
+1. 로그인해서 Access Token을 하나 받아두고(옛 키로 서명됨), `/realms/sso-poc/protocol/openid-connect/userinfo`에 그 토큰으로 호출 → 200 확인
+2. `--add` 실행 → `/realms/sso-poc/protocol/openid-connect/certs`(JWKS)에 옛 kid와 새 kid가 둘 다 있는지 확인
+3. 다시 로그인해서 새로 받은 토큰의 kid가 새 키와 일치하는지 확인 (새 로그인은 새 키로 서명됨)
+4. 1번에서 받아둔 옛 토큰으로 다시 userinfo 호출 → 여전히 200 (옛 키가 아직 JWKS에 남아있어서 유효)
+5. `--remove`로 옛 Provider 제거
+6. 같은 옛 토큰으로 다시 userinfo 호출 → 이번엔 401 (옛 키가 사라져서 검증 불가)
+7. 그 사이 새로 로그인한 세션들(member-cms, payment-cms SSO 포함)은 계속 정상 동작하는지 확인
+
