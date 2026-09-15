@@ -75,3 +75,50 @@ browser-otp-required (top-level)
 기본 `browser` flow를 복제해서 만든 커스텀 flow. 기본 flow에는 OTP가 "이미 등록한 사용자에게만" 조건부로 뜨는 서브플로우가 있는데, 여기서는 그 조건 없이 **OTP Form을 무조건 거치게** 만들어서, OTP를 처음 쓰는 사용자에게도 강제로 등록시킴 (카카오톡/SMS 인증의 자리표시자).
 
 **주의**: `OTP Form`은 `browser-otp-required forms` 서브플로우 **안에**, `Username Password Form` **다음 순서**로 있어야 함. 최상위 레벨에 붙거나 순서가 바뀌면 `auth-otp-form requires user to be set` 에러가 나면서 로그인이 깨짐.
+
+## 7. 실제 DB 테이블 구조 (Postgres)
+
+`realm-export.json`의 각 항목이 실제로는 Postgres의 어느 테이블에 어떻게 나뉘어 저장되는지 정리. (`docker compose exec keycloak-db psql -U keycloak -d keycloak`로 직접 조회 가능, 또는 5432 포트로 로컬 GUI 툴 연결)
+
+| 정보 | 테이블 | 핵심 컬럼 |
+|---|---|---|
+| Realm | `realm` | `id`, `name` |
+| Group | `keycloak_group` | `id`, `realm_id`, `name` |
+| 키클록 계정 | `user_entity` | `id`, `username`, `email` |
+| CMS 계정 매칭(커스텀 속성) | `user_attribute` | `user_id`, `name`, `value` |
+| 계정 ↔ Group 연결 | `user_group_membership` | `user_id`, `group_id` |
+| 비밀번호 / OTP | `credential` | `user_id`, `type`, `credential_data`, `secret_data` |
+| 스키마 자체 관리 이력 | `databasechangelog` | Liquibase가 자동 기록 (아래 참고) |
+
+**전부 `user_id`/`realm_id`/`group_id` 외래키로 연결된 정규화된 구조**이지, 한 테이블에 계정 정보가 다 몰려있는 게 아님.
+
+### 스키마(테이블 구조)는 키클록이 자동 생성함
+
+이 테이블들은 저희가 설계한 게 아니라, 키클록이 빈 Postgres에 처음 연결될 때 내장된 **Liquibase** 마이그레이션 스크립트로 자동 생성한 것 (`databasechangelog` 테이블이 그 실행 이력). 로그에서도 확인됨:
+```
+Initializing database schema. Using changelog META-INF/jpa-changelog-master.xml
+```
+저희가 한 일은 "빈 Postgres를 연결해준 것"뿐이고, 테이블 구조 자체는 100% 키클록 몫.
+
+### 테이블은 범용이고, 의미는 저희가 부여한 것
+
+`user_attribute`는 `name`/`value`만 있는 완전 범용 key-value 저장소. `name`에 `"member_cms_username"`이라는 문자열을 넣은 것도, `keycloak_group`에 `"member-cms-users"`라는 이름을 지은 것도 전부 **저희가 설계한 의미**이지, 키클록이 "CMS 계정 매핑"이라는 개념을 원래부터 알고 있는 게 아님.
+
+### 함정: Admin REST API로 커스텀 속성을 넣으려면 User Profile에 먼저 등록해야 함
+
+`realm-export.json`의 **전체 import**는 이 검증을 생략하고 데이터를 그대로 넣지만, **Admin REST API로 사용자를 생성/수정할 때는 realm의 선언적 User Profile 스키마(`GET/PUT /admin/realms/{realm}/users/profile`)에 등록 안 된 속성은 조용히 무시됨** (에러도 안 남). 실제로 `member_cms_username`/`payment_cms_username`을 API로 넣으려다 이 문제로 계속 저장 안 되는 걸 겪었음 — User Profile에 두 속성을 명시적으로 추가한 뒤에야 정상 저장됨.
+
+→ **실무에서 마이그레이션 스크립트를 Admin API 기반으로 짤 때 반드시 먼저 처리해야 하는 단계.**
+
+### 비밀번호/OTP는 평문으로 저장되지 않음
+
+`credential` 테이블의 `type=password` row:
+```json
+credential_data: {"algorithm":"argon2", "hashIterations":5, ...}
+secret_data: {"value":"<해시값>", "salt":"<랜덤값>"}
+```
+평문 비밀번호는 어디에도 없고, `비밀번호+salt`를 argon2로 해싱한 결과값만 저장됨 (로그인 시 같은 방식으로 다시 해싱해서 값을 비교). `type=otp` row에는 TOTP 공유 비밀키(QR코드에 담긴 값)가 저장됨.
+
+### username과 email은 별개 컬럼
+
+`user_entity.username`과 `user_entity.email`은 서로 다른 필드 (예: `username="lee"`, `email="lee@example.com"`). realm 설정에 따라 로그인 시 둘 중 하나로도 로그인 가능하게 할 수 있지만, 저장되는 `username` 값 자체가 바뀌는 건 아님.
