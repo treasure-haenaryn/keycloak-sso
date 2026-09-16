@@ -1,5 +1,7 @@
-# Local design notes, not published
-PLAN.md
+# Local design/handoff notes, not published - any *.md except README.md
+# (e.g. PLAN.md, CMS_SSO_HANDOFF.md, and anything added the same way later)
+*.md
+!**/README.md
 
 # Build artifacts
 target/
