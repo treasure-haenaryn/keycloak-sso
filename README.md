@@ -79,15 +79,21 @@ oauth2-proxy가 이 값을 무시하고 미인증 상태로 키클록 로그인 
 4. modern-cms(8083) 로그인 시 OTP 등록/입력 화면이 강제되는지, member/payment-cms는 그대로 OTP 없이 되는지 비교
 
 ### 6. 통합 로그아웃(SLO) 확인
+
+**전제**: `oauth2-proxy.cfg`의 `cookie_refresh`가 Access Token Lifespan(90초)보다 짧게 설정되어 있어야 함 — 이게 없으면 oauth2-proxy가 `cookie_expire`(3시간) 동안 Keycloak에 아예 다시 확인하러 가지 않아서, 아래 3~4번이 전혀 동작하지 않는다 (실제로 이 항목이 빠진 채로 한동안 방치돼 있었고, 직접 재현해서 발견함 — `keycloak/deprovision-user.sh` 관련 커밋 참고).
+
 1. lee로 로그인해서 member-cms, payment-cms, modern-cms 세 곳 다 접속해둔 상태 만들기
 2. member-cms에서 로그아웃 클릭
 3. **member-cms**: 즉시 반영, 새로고침하면 바로 키클록 로그인 화면
-4. **payment-cms**: 즉시는 아님 — Access Token Lifespan(90초) 이내에 자연스럽게 로그아웃 상태로 전환되는지 확인 (그 전엔 계속 접속될 수 있음, 정상 동작)
+4. **payment-cms**: 즉시는 아님 — `cookie_refresh` 주기(60초)마다 oauth2-proxy가 Keycloak에 세션 갱신을 시도하다가, 그 세션이 이미 끊겼으면 `invalid_grant "Session not active"`로 거부되면서 로그아웃 상태로 전환되는지 확인 (그 전엔 계속 접속될 수 있음, 정상 동작)
 5. **modern-cms**: 진짜 back-channel logout이 동작하면 더 빠르게(수 초 내) 반영되는지 비교
 
 ### 7. 세션 만료 정책 확인
-1. member-cms를 5분 넘게 계속 눌러가며 사용 → Access Token(90초)이 반복 갱신되는 동안 재로그인 요구 없이 계속 쓸 수 있는지 확인
-2. payment-cms를 접속만 해두고 15분간 방치 → 재로그인 요구되는지 확인
+
+이것도 6번과 동일하게 `cookie_refresh`가 설정되어 있어야 실제로 동작함 — 없으면 Keycloak 쪽 세션이 만료돼도 oauth2-proxy가 그걸 알 방법이 없어서 계속 접속되는 것처럼 보인다.
+
+1. member-cms를 5분 넘게 계속 눌러가며 사용 → `cookie_refresh` 주기마다 갱신되는 동안 재로그인 요구 없이 계속 쓸 수 있는지 확인
+2. payment-cms를 접속만 해두고 15분간 방치(`client.session.idle.timeout`) → 재로그인 요구되는지 확인
 3. member-cms는 같은 조건(15분 방치)에서 아직 안 끊기는지 비교 (realm 기본 30분)
 
 ### 8. Brute-force 보호 확인
@@ -143,4 +149,20 @@ SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..." bash keycloak/slack-ale
 3. 틀린 코드를 5회 연속 입력 → "시도 횟수를 초과했습니다" 에러로 막히는지 확인
 4. 코드 유효시간(기본 180초)이 지난 뒤 입력 → "코드가 만료되었습니다" 에러 확인 → 재발송 버튼으로 새 코드 받아 정상 로그인되는지 확인
 5. member-cms(4181), payment-cms(4182)는 여전히 코드 입력 없이 그대로 로그인되는지 확인 (영향 없음)
+
+### 12. 계정 비활성화(퇴사 처리) 확인
+
+계정을 막기만 하고(`enabled: false`) 기존 세션을 끊지 않으면, 이미 로그인해 있던 사람은 계속 접속할 수 있다 — SSO를 도입한 의미가 무색해지는 지점이라 별도로 검증.
+
+```bash
+bash keycloak/deprovision-user.sh <username>
+```
+계정 비활성화와 기존 세션 강제 종료(`/admin/realms/{realm}/users/{id}/logout`)를 한 번에 처리함.
+
+1. seo로 member-cms(4181) 로그인해서 세션 확보
+2. `bash keycloak/deprovision-user.sh seo` 실행
+3. 같은 브라우저 세션으로 바로 새로고침 → 아직 접속됨 (정상 — `cookie_refresh` 주기 전까지는 oauth2-proxy가 자체 캐시를 그대로 씀)
+4. `cookie_refresh`(60초) 지난 뒤 새로고침 → 로그인 화면으로 튕기는지 확인. `docker compose logs oauth2-proxy-member`에서 `invalid_grant "Session not active"`로 갱신이 거부되는 로그 확인
+5. 같은 계정으로 새로 로그인 시도 → 비활성화된 계정이라 거부되는지 확인
+6. 테스트 후 `enabled: true`로 되돌리는 것 잊지 말 것
 
