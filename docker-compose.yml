@@ -1,5 +1,18 @@
 networks:
-  sso-net:
+  # One network per app+proxy pair, instead of one flat network for everything.
+  # A flat network means any sibling container (e.g. modern-cms) can reach another
+  # app's backend port directly and forge trust headers, since Docker doesn't ACL
+  # traffic between containers on the same network by default - "no ports: published"
+  # only blocks access from outside the Docker host, not from other containers.
+  # Splitting networks so each backend only shares a network with its own proxy (and
+  # Keycloak, which every consumer needs to reach) closes that gap structurally.
+  member-net:
+    driver: bridge
+  payment-net:
+    driver: bridge
+  modern-net:
+    driver: bridge
+  kc-db-net:
     driver: bridge
 
 volumes:
@@ -24,7 +37,7 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - sso-net
+      - kc-db-net
 
   keycloak:
     build: ./keycloak
@@ -54,23 +67,34 @@ services:
     depends_on:
       keycloak-db:
         condition: service_healthy
+    # Keycloak has to sit on every app-facing network (each proxy/app needs to reach
+    # it), but each backend app only sits on its own network - so keycloak can reach
+    # member-cms, but modern-cms/payment-cms cannot.
     networks:
-      sso-net:
+      member-net:
         aliases:
           - idp.local
+      payment-net:
+        aliases:
+          - idp.local
+      modern-net:
+        aliases:
+          - idp.local
+      kc-db-net: {}
 
   member-cms:
     build: ./member-cms
     networks:
-      - sso-net
-    # No "ports:" on purpose - only oauth2-proxy-member can reach this,
-    # simulating the network isolation that's load-bearing for this whole design.
+      - member-net
+    # No "ports:" on purpose, and member-net has no other tenant besides
+    # oauth2-proxy-member and keycloak - nothing else on the compose file can reach
+    # this container at all, let alone forge a trust header at it.
 
   payment-cms:
     build: ./payment-cms
     networks:
-      - sso-net
-    # Same as above.
+      - payment-net
+    # Same as above, on payment-net.
 
   oauth2-proxy-member:
     image: quay.io/oauth2-proxy/oauth2-proxy:latest
@@ -87,7 +111,7 @@ services:
     # start, not for Keycloak itself to be ready, so this retries OIDC discovery until it is.
     restart: on-failure:10
     networks:
-      - sso-net
+      - member-net
 
   oauth2-proxy-payment:
     image: quay.io/oauth2-proxy/oauth2-proxy:latest
@@ -101,7 +125,7 @@ services:
       - payment-cms
     restart: on-failure:10
     networks:
-      - sso-net
+      - payment-net
 
   modern-cms:
     build: ./modern-cms
@@ -113,4 +137,4 @@ services:
     # issuer metadata from Keycloak at startup and fails fast if it's not ready yet.
     restart: on-failure:10
     networks:
-      - sso-net
+      - modern-net

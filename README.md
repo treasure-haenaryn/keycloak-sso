@@ -50,12 +50,19 @@ docker compose up --build
 4. `docker compose logs payment-cms`로 실제로 요청이 앱까지 안 들어갔는지 확인 (앱 로그에 아무 흔적도 없어야 함)
 
 ### 3. 네트워크 격리 확인
+
+`ports:`를 안 쓰는 것만으로는 "다른 컨테이너"로부터의 접근까지 막아주지 않는다 (Docker는 같은 네트워크 안 컨테이너끼리는 기본적으로 서로 포트를 자유롭게 열어둠) - 그래서 member-cms/payment-cms/modern-cms는 각각 전용 네트워크(`member-net`/`payment-net`/`modern-net`)에만 있고, Keycloak만 그 셋 모두에 걸쳐 있음.
+
 ```bash
 # 호스트에서 member-cms 포트로 직접 접근 시도 - 실패해야 함 (포트 자체가 공개 안 됨)
 curl http://localhost:8080  # member-cms의 내부 포트, 이 번호로는 애초에 호스트에 안 열려있음
 
-# 컨테이너 내부에서는 접근 가능함을 대조 확인
+# 같은 네트워크(oauth2-proxy-member)에서는 접근 가능함을 대조 확인
 docker compose exec oauth2-proxy-member wget -qO- http://member-cms:8080/whoami || true
+
+# member-cms와 무관한 컨테이너(modern-cms)에서는 이름 자체가 안 풀려야 함
+# (다른 네트워크라 DNS 조회 단계에서부터 실패 - "Could not resolve host")
+docker compose exec modern-cms curl -m 5 http://member-cms:8080/
 ```
 
 ### 4. 헤더 위조 방어 확인
