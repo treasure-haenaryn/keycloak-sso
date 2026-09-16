@@ -166,3 +166,13 @@ bash keycloak/deprovision-user.sh <username>
 5. 같은 계정으로 새로 로그인 시도 → 비활성화된 계정이라 거부되는지 확인
 6. 테스트 후 `enabled: true`로 되돌리는 것 잊지 말 것
 
+### 13. 단일 세션 강제(동시 로그인 차단) 확인
+
+`keycloak/extensions/single-session-authenticator/`가 realm 기본 flow(member-cms, payment-cms)와 modern-cms의 flow 양쪽에 다 적용되어 있어, 세 앱을 통틀어 같은 계정의 살아있는 세션은 항상 최대 1개다.
+
+1. 브라우저 A(또는 쿠키 저장소 분리)에서 seo로 member-cms(4181) 로그인
+2. 브라우저 B에서 seo로 다시 member-cms 로그인 → 성공
+3. 브라우저 A로 돌아가 새로고침 → 즉시는 계속 접속됨(oauth2-proxy 캐시), `cookie_refresh`(60초) 지난 뒤 재시도하면 로그인 화면으로 튕기는지 확인
+4. 이번엔 브라우저 B에서 modern-cms(8083)에 seo로 로그인(전화 MFA 포함) → 성공하면, 방금까지 살아있던 member-cms 세션(2번)이 이걸로 끊기는지 확인 (앱이 달라도 realm 전체 기준 세션은 1개)
+5. **끊기면 안 되는 경우**: 같은 브라우저로 member-cms 로그인 후 곧바로 payment-cms 접속(SSO) → 이건 새 로그인이 아니라 기존 세션 재사용이라, 자기 자신의 세션을 끊지 않고 그대로 접속되는지 확인
+

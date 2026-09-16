@@ -134,6 +134,20 @@ secret_data: {"value":"<해시값>", "salt":"<랜덤값>"}
 
 **패키징**: `keycloak/Dockerfile`이 이 모듈을 Maven으로 빌드해서 나온 jar를 키클록 이미지의 `/opt/keycloak/providers/`에 넣음 (`docker-compose.yml`의 `keycloak` 서비스가 `image` 대신 `build: ./keycloak`을 쓰는 이유). `start-dev`는 `providers/`에 새 jar가 있으면 기동 시 자동으로 재증강(auto re-augmentation)하므로 별도 `kc.sh build` 실행은 불필요.
 
-**적용 대상**: `modern-cms`(GCP Cloud Run 대역)만 `browser-phone-mfa-required` flow로 바인딩 — 실제로 그 CMS가 전화/카카오 MFA로 전환됐다는 시나리오를 그대로 반영. member-cms/payment-cms(IDC, ID/PW만)는 기존 flow 그대로라 영향 없음. TOTP 기반 `browser-otp-required`(6번 섹션)는 JSON에는 남아있지만 현재 어떤 클라이언트에도 바인딩되어 있지 않음 — 비교용으로 남겨둠.
+**적용 대상**: `modern-cms`(GCP Cloud Run 대역)만 `browser-phone-mfa-required` flow로 바인딩 — 실제로 그 CMS가 전화/카카오 MFA로 전환됐다는 시나리오를 그대로 반영. TOTP 기반 `browser-otp-required`(6번 섹션)는 JSON에는 남아있지만 현재 어떤 클라이언트에도 바인딩되어 있지 않음 — 비교용으로 남겨둠. (member-cms/payment-cms에 대한 영향은 9번 섹션에서 realm 기본 flow 자체가 바뀌면서 달라짐 — phone-mfa 자체는 여전히 modern-cms 전용.)
 
-**함정**: 이 flow를 Admin API로 조립할 때 `browser` flow를 복제(`/copy`)하면 내부에 "Browser - Conditional OTP"라는 CONDITIONAL 서브플로우가 함께 복제됨. 이걸 단순히 `DISABLED`로 바꾸기만 하면 `AuthenticationFlowException`이 나면서 로그인 자체가 깨짐 — DISABLED가 아니라 그 실행(execution) 자체를 **삭제**해야 함.
+**함정 (두 번 반복 확인됨)**: `browser` flow를 복제(`/copy`)하면 내부에 "Browser - Conditional OTP"라는 CONDITIONAL 서브플로우가 함께 복제됨. 이 서브플로우를 그대로 둔 채 REQUIRED 실행을 하나 더 추가하고 그 서브플로우를 `DISABLED`로만 바꾸면 `AuthenticationFlowException`이 나면서 로그인 자체가 깨짐 — DISABLED가 아니라 그 실행(execution) 자체를 **삭제**해야 함. 9번 섹션(단일 세션 강제)에서도 똑같은 증상을 다시 만났고, 이번엔 아예 그 서브플로우 없이 flow를 구성해서 우회함.
+
+## 9. Custom Authenticator SPI — 단일 세션 강제 (동시 로그인 차단)
+
+CMS 특성상 "이 계정으로 로그인된 세션은 realm 전체에서 항상 최대 1개"가 맞다고 판단 — 다른 곳(다른 기기, 다른 앱)에서 새로 로그인하면 기존 세션은 자동으로 끊겨야 함. Keycloak 기본 기능엔 이 옵션이 없어서(세션 수명 정책은 있어도 "동시 세션 1개 제한"은 없음) `keycloak/extensions/single-session-authenticator/`를 새로 만듦.
+
+**핵심 클래스**
+- `SingleSessionAuthenticator`: 화면을 띄우지 않는 조용한 Authenticator. `authenticate()`에서 `session.sessions().getUserSessionsStream(realm, user)`로 그 사용자의 기존 UserSession을 전부 조회해서 `removeUserSession()`으로 강제 종료한 뒤 즉시 `context.success()`.
+- `SingleSessionAuthenticatorFactory`: SPI 등록점. 설정 옵션 없음 (`isConfigurable() = false`).
+
+**왜 flow의 맨 마지막 단계여야 하는가**: 이 단계가 비밀번호 확인 직후처럼 이르게 실행되면, 새 로그인이 이후 단계(MFA 등)에서 실패해도 이미 기존 세션은 지워진 뒤라 애꿎은 정상 세션만 날리는 꼴이 됨. 그래서 MFA가 있는 flow(`browser-phone-mfa-required forms`)에서는 `phone-mfa-authenticator` **다음**에 배치.
+
+**적용 범위 — realm 전체**: `member-cms`/`payment-cms`가 쓰는 기본 `browser` flow는 직접 수정할 수 없어서(Keycloak이 built-in flow에 실행 추가를 막음 — `"It is illegal to add execution to a built in flow"`), `browser`를 복제한 `browser-single-session`을 만들고 realm의 `browserFlow`를 이걸로 교체. 그래서 별도 `authenticationFlowBindingOverrides`가 없는 모든 클라이언트(member-cms-proxy, payment-cms-proxy)에 자동 적용되고, `modern-cms`는 자기 flow에 같은 실행을 추가하는 방식으로 별도 적용 — 결과적으로 세 앱 전부가 realm 전체 단일 세션 정책을 공유함.
+
+**동작 확인**: 같은 계정으로 다른 브라우저(쿠키 초기화)에서 다시 로그인하면, 먼저 로그인해 있던 세션은 즉시 Keycloak 쪽에서 종료됨. 다만 oauth2-proxy 경유 앱은 자체 캐시 때문에 `cookie_refresh` 주기(8번 섹션 참고)가 돌기 전까지는 화면상 계속 로그인된 것처럼 보임 — Keycloak 세션은 끊겼지만 프록시가 아직 그걸 확인 안 한 상태. 반대로 같은 세션으로 다른 CMS에 SSO 이동하는 건 새 로그인이 아니라서(기존 세션 재사용) 이 단계가 아예 실행되지 않고, 자기 자신을 끊는 일은 없음.
