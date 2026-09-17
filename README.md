@@ -176,3 +176,19 @@ bash keycloak/deprovision-user.sh <username>
 4. 이번엔 브라우저 B에서 modern-cms(8083)에 seo로 로그인(전화 MFA 포함) → 성공하면, 방금까지 살아있던 member-cms 세션(2번)이 이걸로 끊기는지 확인 (앱이 달라도 realm 전체 기준 세션은 1개)
 5. **끊기면 안 되는 경우**: 같은 브라우저로 member-cms 로그인 후 곧바로 payment-cms 접속(SSO) → 이건 새 로그인이 아니라 기존 세션 재사용이라, 자기 자신의 세션을 끊지 않고 그대로 접속되는지 확인
 
+### 14. Refresh Token 회전 / PKCE 확인
+
+```bash
+# 로그인해서 code를 직접 뽑아낸 뒤(브라우저 로그인 흐름 중간에 code 파라미터 확인),
+# oauth2-proxy 대신 직접 토큰 교환
+curl -X POST http://idp.local:8080/realms/sso-poc/protocol/openid-connect/token \
+  -d "grant_type=authorization_code" -d "code=<code>" \
+  -d "client_id=member-cms-proxy" -d "client_secret=member-cms-secret" \
+  -d "redirect_uri=http://localhost:4181/oauth2/callback"
+```
+
+1. 받은 `refresh_token`으로 1회 갱신 요청 → 새 토큰 발급 확인
+2. **원본(이미 쓴) refresh_token으로 다시 갱신 시도** → `"Maximum allowed refresh token reuse exceeded"`로 거부되는지 확인
+3. 방금 정상적으로 발급받은 **새 refresh_token**도 시도 → `"Session doesn't have required client"`로 같이 거부되는지 확인 (재사용 탐지 시 세션 전체가 무효화됨)
+4. member-cms(4181)/payment-cms(4182)/modern-cms(8083) 전부 정상 로그인되는지 확인 — PKCE가 강제된 상태에서도 세 앱 다 깨지지 않아야 함 (oauth2-proxy 재시작 안 하고 설정만 바꾸면 반영 안 되니 주의)
+

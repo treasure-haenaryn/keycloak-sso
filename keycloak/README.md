@@ -151,3 +151,25 @@ CMS 특성상 "이 계정으로 로그인된 세션은 realm 전체에서 항상
 **적용 범위 — realm 전체**: `member-cms`/`payment-cms`가 쓰는 기본 `browser` flow는 직접 수정할 수 없어서(Keycloak이 built-in flow에 실행 추가를 막음 — `"It is illegal to add execution to a built in flow"`), `browser`를 복제한 `browser-single-session`을 만들고 realm의 `browserFlow`를 이걸로 교체. 그래서 별도 `authenticationFlowBindingOverrides`가 없는 모든 클라이언트(member-cms-proxy, payment-cms-proxy)에 자동 적용되고, `modern-cms`는 자기 flow에 같은 실행을 추가하는 방식으로 별도 적용 — 결과적으로 세 앱 전부가 realm 전체 단일 세션 정책을 공유함.
 
 **동작 확인**: 같은 계정으로 다른 브라우저(쿠키 초기화)에서 다시 로그인하면, 먼저 로그인해 있던 세션은 즉시 Keycloak 쪽에서 종료됨. 다만 oauth2-proxy 경유 앱은 자체 캐시 때문에 `cookie_refresh` 주기(8번 섹션 참고)가 돌기 전까지는 화면상 계속 로그인된 것처럼 보임 — Keycloak 세션은 끊겼지만 프록시가 아직 그걸 확인 안 한 상태. 반대로 같은 세션으로 다른 CMS에 SSO 이동하는 건 새 로그인이 아니라서(기존 세션 재사용) 이 단계가 아예 실행되지 않고, 자기 자신을 끊는 일은 없음.
+
+## 10. Refresh Token 회전(rotation) / 재사용 탐지
+
+기존엔 `cookie_refresh`로 refresh token을 계속 재사용해서 access token을 갱신하는 구조였는데(8번 섹션), refresh token 자체는 유출돼도 남은 수명 동안 몇 번이든 재사용 가능한 상태였음. realm에 다음 두 옵션을 추가:
+
+```json
+"revokeRefreshToken": true,
+"refreshTokenMaxReuse": 0,
+```
+
+**동작**: refresh token을 쓸 때마다 새 토큰으로 교체(회전)하고 이전 토큰은 즉시 무효화됨. 이미 회전되어 무효화된 토큰이 다시 사용되면(= 정상 클라이언트와 공격자가 같은 토큰을 나눠 쓰고 있다는 신호), Keycloak은 그 토큰 하나만 거부하는 게 아니라 **세션 전체를 무효화**함 — 정상적으로 회전되어 나온 최신 토큰까지 같이 못 쓰게 됨.
+
+**검증**: 토큰 엔드포인트에 직접 curl로 코드 교환 → 받은 refresh_token을 1회 사용(정상 회전, 새 토큰 발급됨) → **원본(이미 쓴) refresh_token을 재사용** → `"Maximum allowed refresh token reuse exceeded"`로 거부 → 그 직후 **정상적으로 회전되어 나온 새 토큰**까지 시도 → `"Session doesn't have required client"`로 역시 거부(세션 자체가 사라짐) — 도난 탐지 시 세션째로 끊어내는 것까지 확인.
+
+## 11. PKCE (Proof Key for Code Exchange)
+
+세 클라이언트 모두 client_secret이 있는 confidential client라 PKCE 없이도 기본 방어는 되지만, 인가 코드 자체가 중간에 탈취되는 경로를 막는 건 PKCE만의 역할이라 defense-in-depth로 추가. 각 클라이언트 `attributes`에 `"pkce.code.challenge.method": "S256"` 추가.
+
+- **oauth2-proxy(member/payment-cms)**: `code_challenge_method = "S256"` 설정 한 줄로 지원 (`--code-challenge-method` 옵션, opt-in — 기본으론 안 보냄)
+- **modern-cms(Spring Security)**: confidential client는 기본으로 PKCE를 안 보내서, `DefaultOAuth2AuthorizationRequestResolver` + `OAuth2AuthorizationRequestCustomizers.withPkce()`를 `SecurityConfig.java`에 직접 연결해야 함 (public client에만 자동 적용되는 Spring Security 기본 동작과 다름)
+
+**함정**: Keycloak 클라이언트에 PKCE를 필수로 걸어두고 클라이언트(oauth2-proxy/Spring)가 실제로 code_challenge를 안 보내는 상태로 두면 `invalid_request`로 로그인 자체가 막힘 — 설정 변경 후 oauth2-proxy를 재시작 안 해서(설정 파일은 기동 시에만 읽음) 한 번 이 상태로 재현했음. 세 앱 다 실제로 PKCE 강제 상태에서 로그인 성공까지 확인.

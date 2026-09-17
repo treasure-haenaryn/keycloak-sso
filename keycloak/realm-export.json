@@ -9,6 +9,9 @@
 
   "browserFlow": "browser-single-session",
 
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+
   "bruteForceProtected": true,
   "permanentLockout": false,
   "failureFactor": 5,
@@ -97,7 +100,8 @@
       "webOrigins": ["+"],
       "fullScopeAllowed": true,
       "attributes": {
-        "access.token.lifespan": "90"
+        "access.token.lifespan": "90",
+        "pkce.code.challenge.method": "S256"
       },
       "protocolMappers": [
         {
@@ -144,7 +148,8 @@
       "fullScopeAllowed": true,
       "attributes": {
         "access.token.lifespan": "90",
-        "client.session.idle.timeout": "900"
+        "client.session.idle.timeout": "900",
+        "pkce.code.challenge.method": "S256"
       },
       "protocolMappers": [
         {
@@ -190,6 +195,7 @@
       "webOrigins": ["+"],
       "fullScopeAllowed": true,
       "attributes": {
+        "pkce.code.challenge.method": "S256",
         "backchannel.logout.url": "http://modern-cms:8083/logout/connect/back-channel/keycloak",
         "backchannel.logout.session.required": "true",
         "backchannel.logout.revoke.offline.tokens": "false",
